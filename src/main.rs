@@ -32,6 +32,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 const BANNER: &str = "Arp Notify";
+
 fn main() {
     let matches = App::new(BANNER)
         .author("Krakaw")
@@ -113,30 +114,26 @@ fn main() {
             .unwrap()
             .map(|x| MacAddr::from_str(x.clone()).unwrap())
             .collect();
+
         for monitor_mac in monitor_macs {
             if available_macs.contains_key(&monitor_mac) {
                 println!("Mac Exists {} - {:?}", monitor_mac, available_macs.get(&monitor_mac));
-            }else {
+            } else {
                 println!("Mac Un-available {}", monitor_mac);
             }
         }
         std::process::exit(0);
     } else {
-
-
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
         table.set_titles(row!["host", "mac"]);
 
-        let mut available_ips: HashMap<Ipv4Addr, MacAddr> = HashMap::new();
-        for (mac, ip) in available_macs {
-            available_ips.insert(ip, mac);
-        }
-        let mut ips:Vec<(&Ipv4Addr, &MacAddr)> = available_ips.iter().collect();
-        ips.sort_by(|a,b| a.0.cmp(b.0));
 
-//        let ips = ips
-        for ( ip, mac) in ips {
+        let mut ips: Vec<(&MacAddr, &Ipv4Addr)> = available_macs.iter().collect();
+        ips.sort_by(|a, b| a.1.cmp(b.1));
+
+        println!("{} devices found\n", &ips.len());
+        for (ip, mac) in ips {
             table.add_row(row![ip, mac]);
         }
 
@@ -146,10 +143,9 @@ fn main() {
             println!("No hosts found...");
         }
     }
-
 }
 
-fn fetch_macs(interface: NetworkInterface) -> Result<HashMap<MacAddr, Ipv4Addr>, Box<Error>>{
+fn fetch_macs(interface: NetworkInterface) -> Result<HashMap<MacAddr, Ipv4Addr>, Box<Error>> {
     let source_mac = interface.mac_address();
     let source_network = interface.ips.iter().find(|x| x.is_ipv4()).unwrap();
     let source_ip = source_network.ip();
