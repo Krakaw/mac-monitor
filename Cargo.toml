@@ -1,5 +1,5 @@
 [package]
-name = "arp-notify"
+name = "mac-notify"
 version = "0.1.0"
 authors = ["Krakaw <41575888+Krakaw@users.noreply.github.com>"]
 edition = "2018"

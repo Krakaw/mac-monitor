@@ -34,6 +34,7 @@ use std::hash::Hash;
 const BANNER: &str = "Arp Notify";
 fn main() {
     let matches = App::new(BANNER)
+        .author("Krakaw")
         .about("\nPoll ARP addresses and trigger a web hook when an interface changes.")
         .arg(
             Arg::with_name("interface")
