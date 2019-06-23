@@ -1,49 +1,80 @@
-extern crate pnet;
-extern crate ipnetwork;
 extern crate clap;
+extern crate ipnetwork;
+extern crate pnet;
 
 #[macro_use]
 extern crate prettytable;
 
-use clap::{Arg, App, ArgMatches};
+use clap::{App, Arg, ArgMatches};
 
-use prettytable::Table;
 use prettytable::format;
+use prettytable::Table;
 
-use std::time::Duration;
-use std::thread;
 use std::fs::File;
 use std::io::Write;
-use std::sync::mpsc::{self, Sender, Receiver};
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
+use std::time::Duration;
 
-use ipnetwork::{IpNetwork};
-use pnet::datalink::{self, Channel, NetworkInterface, MacAddr};
+use ipnetwork::IpNetwork;
+use pnet::datalink::{self, Channel, MacAddr, NetworkInterface};
 
-use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::arp::MutableArpPacket;
+use pnet::packet::arp::{ArpHardwareTypes, ArpOperation, ArpOperations, ArpPacket};
+use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
-use pnet::packet::{Packet, MutablePacket};
-use pnet::packet::arp::{ArpHardwareTypes, ArpOperations, ArpOperation, ArpPacket};
+use pnet::packet::{MutablePacket, Packet};
+use std::str::FromStr;
+use pnet::util::ParseMacAddrErr;
 
+const BANNER: &str = "Arp Notify";
 fn main() {
-    println!("Hello, world!");
-    println!("Listing interfaces:\n");
-    let interfaces = datalink::interfaces();
+    let matches = App::new(BANNER)
+        .about("\nPoll ARP addresses and trigger a web hook when an interface changes.")
+        .arg(
+            Arg::with_name("interface")
+                .short("i")
+                .long("interface")
+                .value_name("INTERFACE")
+                .help("The interface on which the scan will be performed")
+                .required_unless_one(&["list_interfaces"])
+        )
+        .arg(
+            Arg::with_name("monitor_macs")
+                .short("m")
+                .long("monitor")
+                .value_name("MONITOR")
+                .multiple(true)
+                .takes_value(true)
+                .requires("interface")
+                .help("List of mac addresses to monitor")
+        )
+        .arg(
+            Arg::with_name("list_interfaces")
+                .short("l")
+                .long("list")
+                .help("List available interfaces including their index")
+                .conflicts_with_all(&["interface", "monitor"])
+        )
+        .get_matches();
+
+    if matches.is_present("list_interfaces") {
+        println!("Listing interfaces:\n");
+        let interfaces = datalink::interfaces();
+        for interface in interfaces.iter() {
+            println!("{}\n", interface);
+        }
+        std::process::exit(0);
+    }
 
     let interface_match = |iface: &NetworkInterface| {
-        return &iface.name == &"en0".to_string();
-//        if matches.is_present("interface") {
-//            return &iface.name == matches.value_of("interface").unwrap();
-//        } else {
-//            let index_str = matches.value_of("interface_index").unwrap();
-//            let index : u32 = index_str.parse().unwrap();
-//
-//            return iface.index == index;
-//        }
+        return &iface.name == matches.value_of("interface").unwrap();
     };
+
     let interfaces = datalink::interfaces();
-    let interface = interfaces.into_iter()
+    let interface = interfaces
+        .into_iter()
         .filter(interface_match)
         .next()
         .unwrap();
@@ -59,65 +90,112 @@ fn main() {
     }
 
     println!("Using interface: {}\n", interface);
+
     let source_mac = interface.mac_address();
     let source_network = interface.ips.iter().find(|x| x.is_ipv4()).unwrap();
     let source_ip = source_network.ip();
     let arp_operation = ArpOperations::Request;
-    let target_mac = MacAddr::new(255,255,255,255,255,255);
 
-    // Channel for ARP replies.
-    let (tx, rx): (Sender<(Ipv4Addr, MacAddr)>, Receiver<(Ipv4Addr, MacAddr)>) = mpsc::channel();
-
-    recv_arp_packets(interface.clone(), tx);
-
-    println!("[X] Sending ARP requests...");
-
-    match source_network {
-        &IpNetwork::V4(source_networkv4) => {
-            for target_ipv4 in source_networkv4.iter() {
-                match source_ip {
-                    IpAddr::V4(source_ipv4) => {
-                        send_arp_packet(interface.clone(), source_ipv4, source_mac, target_ipv4, target_mac, arp_operation);
-                    },
-                    e => panic!("Error while parsing to IPv4 address: {}", e)
+    if matches.is_present("monitor_macs") {
+        let monitor_macs = matches.values_of("monitor_macs").unwrap().collect::<Vec<_>>();
+        for monitor_mac in monitor_macs {
+            println!("{}", monitor_mac);
+            let target_mac = MacAddr::from_str(monitor_mac).unwrap();
+            // Channel for ARP replies.
+            let (tx, rx): (Sender<(Ipv4Addr, MacAddr)>, Receiver<(Ipv4Addr, MacAddr)>) = mpsc::channel();
+            recv_arp_packets(interface.clone(), tx);
+            match source_network {
+                &IpNetwork::V4(source_networkv4) => {
+                    for target_ipv4 in source_networkv4.iter() {
+                        match source_ip {
+                            IpAddr::V4(source_ipv4) => {
+                                send_arp_packet(
+                                    interface.clone(),
+                                    source_ipv4,
+                                    source_mac,
+                                    target_ipv4,
+                                    target_mac,
+                                    arp_operation,
+                                );
+                            }
+                            e => panic!("Error while parsing to IPv4 address: {}", e),
+                        }
+                    }
                 }
-
+                e => panic!("Error while attempting to get network for interface: {}", e),
             }
-        },
-        e => panic!("Error while attempting to get network for interface: {}", e)
-    }
-    println!("[X] Collecting results...");
-    thread::sleep(Duration::from_secs(2));
-    println!();
 
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
-    table.set_titles(row!["host", "mac"]);
+            loop {
+                match rx.try_recv() {
+                    Ok((ipv4_addr, mac_addr)) => {
+                        println!("{} {}", ipv4_addr, mac_addr);
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
 
-    loop {
-        match rx.try_recv() {
-            Ok((ipv4_addr, mac_addr)) => {
-                table.add_row(row![ipv4_addr, mac_addr]);
-            },
-            Err(_) => break
+
+        std::process::exit(0);
+    } else {
+
+        let target_mac = MacAddr::new(255, 255, 255, 255, 255, 255);
+
+        // Channel for ARP replies.
+        let (tx, rx): (Sender<(Ipv4Addr, MacAddr)>, Receiver<(Ipv4Addr, MacAddr)>) = mpsc::channel();
+
+        recv_arp_packets(interface.clone(), tx);
+
+        println!("[X] Sending ARP requests...");
+
+        match source_network {
+            &IpNetwork::V4(source_networkv4) => {
+                for target_ipv4 in source_networkv4.iter() {
+                    match source_ip {
+                        IpAddr::V4(source_ipv4) => {
+                            send_arp_packet(
+                                interface.clone(),
+                                source_ipv4,
+                                source_mac,
+                                target_ipv4,
+                                target_mac,
+                                arp_operation,
+                            );
+                        }
+                        e => panic!("Error while parsing to IPv4 address: {}", e),
+                    }
+                }
+            }
+            e => panic!("Error while attempting to get network for interface: {}", e),
+        }
+        println!("[X] Collecting results...");
+        thread::sleep(Duration::from_secs(2));
+        println!();
+
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
+        table.set_titles(row!["host", "mac"]);
+
+        loop {
+            match rx.try_recv() {
+                Ok((ipv4_addr, mac_addr)) => {
+                    table.add_row(row![ipv4_addr, mac_addr]);
+                }
+                Err(_) => break,
+            }
+        }
+
+        if table.len() > 0 {
+            table.printstd();
+        } else {
+            println!("No hosts found...");
         }
     }
 
-    if table.len() > 0 {
-        table.printstd();
 
 
 
-    } else {
-        println!("No hosts found...");
-
-
-    }
-
-    std::process::exit(0);
 }
-
-
 
 fn send_arp_packet(
     interface: NetworkInterface,
@@ -125,12 +203,12 @@ fn send_arp_packet(
     source_mac: MacAddr,
     target_ip: Ipv4Addr,
     target_mac: MacAddr,
-    arp_operation: ArpOperation) {
-
+    arp_operation: ArpOperation,
+) {
     let (mut tx, _) = match datalink::channel(&interface, Default::default()) {
         Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
         Ok(_) => panic!("Unknown channel type"),
-        Err(e) => panic!("Error happened {}", e)
+        Err(e) => panic!("Error happened {}", e),
     };
 
     let mut ethernet_buffer = [0u8; 42];
@@ -159,12 +237,11 @@ fn send_arp_packet(
 }
 
 fn recv_arp_packets(interface: NetworkInterface, tx: Sender<(Ipv4Addr, MacAddr)>) {
-
     thread::spawn(move || {
         let (_, mut rx) = match datalink::channel(&interface, Default::default()) {
             Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
             Ok(_) => panic!("Unknown channel type"),
-            Err(e) => panic!("Error happened {}", e)
+            Err(e) => panic!("Error happened {}", e),
         };
 
         loop {
@@ -177,13 +254,15 @@ fn recv_arp_packets(interface: NetworkInterface, tx: Sender<(Ipv4Addr, MacAddr)>
                         let arp_reply_op = ArpOperation::new(2_u16);
 
                         if arp_packet.get_operation() == arp_reply_op {
-                            let result: (Ipv4Addr, MacAddr) = (arp_packet.get_sender_proto_addr(), arp_packet.get_sender_hw_addr());
+                            let result: (Ipv4Addr, MacAddr) = (
+                                arp_packet.get_sender_proto_addr(),
+                                arp_packet.get_sender_hw_addr(),
+                            );
                             tx.send(result).unwrap();
                         }
                     }
-
-                },
-                Err(e) => panic!("An error occurred while reading packet: {}", e)
+                }
+                Err(e) => panic!("An error occurred while reading packet: {}", e),
             }
         }
     });

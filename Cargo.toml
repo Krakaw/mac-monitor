@@ -5,7 +5,7 @@ authors = ["Krakaw <41575888+Krakaw@users.noreply.github.com>"]
 edition = "2018"
 
 [dependencies]
-pnet_datalink = "0.21.0"
+pnet_datalink = "0.22.0"
 ipnetwork = "0.14.0"
 prettytable-rs = "0.7.0"
 clap = "2.31.2"
