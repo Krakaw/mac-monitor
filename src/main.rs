@@ -29,6 +29,7 @@ use std::str::FromStr;
 use pnet::util::ParseMacAddrErr;
 use std::error::Error;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 const BANNER: &str = "Arp Notify";
 fn main() {
@@ -121,11 +122,20 @@ fn main() {
         std::process::exit(0);
     } else {
 
+
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
         table.set_titles(row!["host", "mac"]);
 
+        let mut available_ips: HashMap<Ipv4Addr, MacAddr> = HashMap::new();
         for (mac, ip) in available_macs {
+            available_ips.insert(ip, mac);
+        }
+        let mut ips:Vec<(&Ipv4Addr, &MacAddr)> = available_ips.iter().collect();
+        ips.sort_by(|a,b| a.0.cmp(b.0));
+
+//        let ips = ips
+        for ( ip, mac) in ips {
             table.add_row(row![ip, mac]);
         }
 
