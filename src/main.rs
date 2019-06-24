@@ -5,13 +5,11 @@ extern crate pnet;
 #[macro_use]
 extern crate prettytable;
 
-use clap::{App, Arg, ArgMatches};
+use clap::{App, Arg};
 
 use prettytable::format;
 use prettytable::Table;
 
-use std::fs::File;
-use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -26,17 +24,24 @@ use pnet::packet::ethernet::MutableEthernetPacket;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::{MutablePacket, Packet};
 use std::str::FromStr;
-use pnet::util::ParseMacAddrErr;
 use std::error::Error;
 use std::collections::HashMap;
-use std::hash::Hash;
 
 const BANNER: &str = "Arp Notify";
+const DEFAULT_POLL: &str = "10";
+const DEFAULT_DEBOUNCE: &str = "7";
 
 fn main() {
     let matches = App::new(BANNER)
         .author("Krakaw")
-        .about("\nPoll ARP addresses and trigger a web hook when an interface changes.")
+        .about("\nPoll ARP addresses and trigger an action when an mac changes.")
+        .arg(
+            Arg::with_name("list_interfaces")
+                .short("l")
+                .long("list")
+                .help("List available interfaces including their index")
+                .conflicts_with_all(&["interface", "monitor", "poll_time"])
+        )
         .arg(
             Arg::with_name("interface")
                 .short("i")
@@ -56,11 +61,20 @@ fn main() {
                 .help("List of mac addresses to monitor")
         )
         .arg(
-            Arg::with_name("list_interfaces")
-                .short("l")
-                .long("list")
-                .help("List available interfaces including their index")
-                .conflicts_with_all(&["interface", "monitor"])
+            Arg::with_name("poll_time")
+                .short("p")
+                .long("poll_time")
+                .value_name("SECONDS")
+                .default_value(DEFAULT_POLL)
+                .help("How often should the network be polled")
+        )
+        .arg(
+            Arg::with_name("debounce")
+                .short("d")
+                .long("debounce")
+                .value_name("COUNT")
+                .default_value(DEFAULT_DEBOUNCE)
+                .help("Take the average count of available responses after [COUNT] requests")
         )
         .get_matches();
 
@@ -94,7 +108,19 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("Using interface: {}\n", interface);
+    println!("Using interface: {} - {:?}\n", interface.name, interface.ips.iter().filter_map(|x: &IpNetwork| {
+        match x.ip() {
+            IpAddr::V4(value) => Some(value.to_string()),
+            _ => None
+        }
+    }).collect::<Vec<String>>());
+
+    // How often should we poll the network
+    let poll_in_seconds:usize = usize::from_str(matches.value_of("poll_time").unwrap_or(DEFAULT_POLL)).unwrap_or(usize::from_str(DEFAULT_POLL).unwrap());
+
+    //After how many polls should a device be considered available
+    let default_debounce: usize = usize::from_str(matches.value_of("debounce").unwrap_or(DEFAULT_DEBOUNCE)).unwrap_or(usize::from_str(DEFAULT_DEBOUNCE).unwrap());
+
 
     let source_mac = interface.mac_address();
     let source_network = interface.ips.iter().find(|x| x.is_ipv4()).unwrap();
