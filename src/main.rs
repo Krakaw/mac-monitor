@@ -54,11 +54,19 @@ fn main() {
             Arg::with_name("monitor_macs")
                 .short("m")
                 .long("monitor")
-                .value_name("MONITOR")
+                .value_name("MAC_ADDRESSES")
                 .multiple(true)
                 .takes_value(true)
                 .requires("interface")
                 .help("List of mac addresses to monitor")
+        )
+        .arg(
+            Arg::with_name("notify_on_new")
+                .short("n")
+                .long("new")
+                .default_value_if("monitor_macs", None, "1")
+                .requires("interface")
+                .help("Notify when a never before seen mac is found")
         )
         .arg(
             Arg::with_name("poll_time")
@@ -75,6 +83,15 @@ fn main() {
                 .value_name("COUNT")
                 .default_value(DEFAULT_DEBOUNCE)
                 .help("Take the average count of available responses after [COUNT] requests")
+        )
+        .arg(
+            Arg::with_name("state_file")
+                .short("s")
+                .long("state_file")
+                .value_name("FILE")
+                .takes_value(true)
+                .requires("interface")
+                .help("Where to store the state")
         )
         .get_matches();
 
@@ -117,9 +134,11 @@ fn main() {
 
     // How often should we poll the network
     let poll_in_seconds:usize = usize::from_str(matches.value_of("poll_time").unwrap_or(DEFAULT_POLL)).unwrap_or(usize::from_str(DEFAULT_POLL).unwrap());
-
     //After how many polls should a device be considered available
     let default_debounce: usize = usize::from_str(matches.value_of("debounce").unwrap_or(DEFAULT_DEBOUNCE)).unwrap_or(usize::from_str(DEFAULT_DEBOUNCE).unwrap());
+    let notify_on_new: bool = matches.value_of("notify_on_new").map(|x|x=="1").unwrap_or( false);
+    println!("{}", notify_on_new);
+    let state_file = matches.value_of("state_file");
 
 
     let source_mac = interface.mac_address();
