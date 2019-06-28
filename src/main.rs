@@ -85,13 +85,20 @@ fn main() {
                 .help("Take the average count of available responses after [COUNT] requests")
         )
         .arg(
+            Arg::with_name("lookup_macs")
+                .short("o")
+                .long("lookup_macs")
+                .requires("interface")
+                .help("Lookup the mac address vendors")
+        )
+        .arg(
             Arg::with_name("state_file")
                 .short("s")
                 .long("state_file")
                 .value_name("FILE")
                 .takes_value(true)
                 .requires("interface")
-                .help("Where to store the state")
+                .help("Where to store the JSON state file")
         )
         .get_matches();
 
