@@ -18,6 +18,7 @@ pub struct AppProperties {
     pub notify_on_new: bool,
     pub state_file: Option<String>,
     pub monitor_macs: Vec<MacAddr>,
+    pub lookup_macs: bool,
 
 }
 
@@ -41,7 +42,9 @@ impl App {
     pub fn build() -> App {
         let matches = get_matches();
         let interfaces = utils::network::interfaces::Interfaces::new();
+
         let list_interfaces = matches.is_present("list_interfaces");
+        let lookup_macs = matches.is_present("lookup_macs");
 
         let interface = matches.value_of("interface").map(|x|x.clone().to_owned());
         // How often should we poll the network
@@ -67,7 +70,8 @@ impl App {
             default_debounce,
             notify_on_new,
             state_file,
-            monitor_macs
+            monitor_macs,
+            lookup_macs
         };
 
         App {
@@ -87,17 +91,24 @@ impl App {
 
         self.set_interface();
         self.fetch_mac_addresses();
+
+        // Fetch the mac lookup
+
         self.print_macs();
 
     }
 
     pub fn print_macs(&self) {
+        if self.properties.lookup_macs {
+            let macs = self.mac_addresses.keys().map(|&x|x.clone()).collect();
+            let vendors = utils::details::mac_lookup::lookup_mac(macs).unwrap();
+        }
+
         if self.properties.monitor_macs.len() > 0 {
             for monitor_mac in self.properties.monitor_macs.to_owned() {
                 if self.mac_addresses.contains_key(&monitor_mac) {
                     println!("Mac Exists {} - {:?}", &monitor_mac, self.mac_addresses.get(&monitor_mac));
                 } else {
-
                     println!("Mac Un-available {}", &monitor_mac);
                 }
             }
