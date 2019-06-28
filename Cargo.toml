@@ -9,6 +9,10 @@ pnet_datalink = "0.22.0"
 ipnetwork = "0.14.0"
 prettytable-rs = "0.7.0"
 clap = "2.31.2"
+reqwest = "0.9.18"
+tokio = "0.1.21"
+serde = "1.0.94"
+futures = "0.1.28"
 
 [dependencies.pnet]
 version = "0.22.0"
