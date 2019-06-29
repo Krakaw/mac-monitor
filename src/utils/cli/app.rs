@@ -1,5 +1,5 @@
 use clap::{App as ClApp, Arg, ArgMatches};
-use pnet::datalink::{MacAddr};
+use pnet::datalink::MacAddr;
 use pnet_datalink::NetworkInterface;
 use crate::utils;
 use ipnetwork::IpNetwork;
@@ -26,7 +26,7 @@ pub struct App {
     pub interfaces: utils::network::interfaces::Interfaces,
     pub interface: Option<NetworkInterface>,
     pub properties: AppProperties,
-    pub mac_addresses: HashMap<MacAddr, Ipv4Addr>
+    pub mac_addresses: HashMap<MacAddr, Ipv4Addr>,
 }
 
 const BANNER: &str = "Arp Notify";
@@ -46,13 +46,13 @@ impl App {
         let list_interfaces = matches.is_present("list_interfaces");
         let lookup_macs = matches.is_present("lookup_macs");
 
-        let interface = matches.value_of("interface").map(|x|x.clone().to_owned());
+        let interface = matches.value_of("interface").map(|x| x.clone().to_owned());
         // How often should we poll the network
-        let poll_in_seconds:usize = usize::from_str(matches.value_of("poll_time").unwrap_or(DEFAULT_POLL)).unwrap_or(usize::from_str(DEFAULT_POLL).unwrap());
+        let poll_in_seconds: usize = usize::from_str(matches.value_of("poll_time").unwrap_or(DEFAULT_POLL)).unwrap_or(usize::from_str(DEFAULT_POLL).unwrap());
         //After how many polls should a device be considered available
         let default_debounce: usize = usize::from_str(matches.value_of("debounce").unwrap_or(DEFAULT_DEBOUNCE)).unwrap_or(usize::from_str(DEFAULT_DEBOUNCE).unwrap());
-        let notify_on_new: bool = matches.value_of("notify_on_new").map(|x|x=="1").unwrap_or( false);
-        let state_file = matches.value_of("state_file").map(|x|x.clone().to_owned());
+        let notify_on_new: bool = matches.value_of("notify_on_new").map(|x| x == "1").unwrap_or(false);
+        let state_file = matches.value_of("state_file").map(|x| x.clone().to_owned());
 
         let mut monitor_macs: Vec<MacAddr> = vec![];
         if matches.is_present("monitor_macs") {
@@ -71,16 +71,15 @@ impl App {
             notify_on_new,
             state_file,
             monitor_macs,
-            lookup_macs
+            lookup_macs,
         };
 
         App {
             interfaces,
             interface: None,
             properties,
-            mac_addresses: HashMap::new()
+            mac_addresses: HashMap::new(),
         }
-
     }
 
     pub fn process(&mut self) {
@@ -95,13 +94,13 @@ impl App {
         // Fetch the mac lookup
 
         self.print_macs();
-
     }
 
     pub fn print_macs(&self) {
+        let mut vendors: HashMap<MacAddr, String> = HashMap::new();
         if self.properties.lookup_macs {
-            let macs = self.mac_addresses.keys().map(|&x|x.clone()).collect();
-            let vendors = utils::details::mac_lookup::lookup_mac(macs).unwrap();
+            let macs = self.mac_addresses.keys().map(|&x| x.clone()).collect();
+            vendors = utils::details::mac_lookup::lookup_mac(macs).unwrap_or(HashMap::new());
         }
 
         if self.properties.monitor_macs.len() > 0 {
@@ -112,11 +111,17 @@ impl App {
                     println!("Mac Un-available {}", &monitor_mac);
                 }
             }
-
         } else {
             let mut table = Table::new();
             table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
-            table.set_titles(row!["host", "mac"]);
+            let titles = {
+                if self.properties.lookup_macs {
+                    row!["host", "mac", "vendor"]
+                } else {
+                    row!["host", "mac"]
+                }
+            };
+            table.set_titles(titles);
 
 
             let mut ips: Vec<(&MacAddr, &Ipv4Addr)> = self.mac_addresses.iter().collect();
@@ -124,7 +129,14 @@ impl App {
 
             println!("{} devices found\n", &ips.len());
             for (ip, mac) in ips {
-                table.add_row(row![ip, mac]);
+                let row = {
+                    if self.properties.lookup_macs {
+                        row![ip, mac, vendors.get(ip).unwrap_or(&"Unknown".to_string())]
+                    } else {
+                        row![ip, mac]
+                    }
+                };
+                table.add_row(row);
             }
 
             if table.len() > 0 {
@@ -167,7 +179,7 @@ impl App {
         self.interface = Some(interface);
     }
 
-    pub fn fetch_mac_addresses(&mut self) -> HashMap<MacAddr, Ipv4Addr>{
+    pub fn fetch_mac_addresses(&mut self) -> HashMap<MacAddr, Ipv4Addr> {
         let arp_requests = utils::network::arp::Arp {
             interface: self.interface.clone().unwrap()
         };
@@ -178,10 +190,7 @@ impl App {
         self.mac_addresses = available_macs.clone();
 
         available_macs
-
     }
-
-
 }
 
 
@@ -255,5 +264,4 @@ fn get_matches() -> ArgMatches<'static> {
                 .help("Where to store the JSON state file")
         )
         .get_matches()
-
 }

@@ -137,7 +137,10 @@ fn recv_arp_packets(
                                 arp_packet.get_sender_proto_addr(),
                                 arp_packet.get_sender_hw_addr(),
                             );
-                            tx.send(result).unwrap();
+                            match tx.send(result) {
+                                Ok(_) => {},
+                                Err(_) => {}
+                            }
                         }
                     }
                 }
