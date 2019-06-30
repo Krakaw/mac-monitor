@@ -835,6 +835,9 @@ dependencies = [
 name = "pnet_base"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "serde 1.0.94 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "pnet_datalink"

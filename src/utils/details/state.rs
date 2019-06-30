@@ -1,23 +1,38 @@
 use std::fs;
-use std::fs::File;
-use std::io::BufReader;
-use std::io::prelude::*;
-use std::path::PathBuf;
-use std::borrow::Cow;
-// Cow = clone on write
 use serde::{Serialize, Deserialize};
-use serde_json::json;
-use std::{error::Error, fmt};
 use std::collections::HashMap;
 use pnet_datalink::MacAddr;
 
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+//
+//
+//#[derive(Serialize, Deserialize, Debug)]
+//struct MacAddrString {
+//    #[serde(with = "serialize_mac_address")]
+//    data: MacAddr
+//}
+//
+//impl From<MacAddrString> for MacAddr {
+//    fn from(mac: MacAddrString) -> Self {
+//        mac.data
+//    }
+//}
+//
+//impl From<MacAddr> for MacAddrString {
+//    fn from(mac: MacAddr) -> Self {
+//        MacAddrString {
+//            data: mac
+//        }
+//    }
+//}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct StateProperties {
-    pub stored_vendors: HashMap<String, String>,
-    pub monitor_macs: Vec<String>,
+    pub stored_vendors: HashMap<MacAddr, String>,
+    pub monitor_macs: Vec<MacAddr>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct State {
     pub state_path: String,
     pub properties: StateProperties,
@@ -34,16 +49,10 @@ impl State {
         state
     }
 
-    pub fn save(&self) -> std::io::Result<()> {
-        let contents: String = serde_json::to_string(&self.properties)?;
+    pub fn save(&self, state_properties: StateProperties) -> std::io::Result<()> {
+        let contents: String = serde_json::to_string(&state_properties)?;
         let state_path = self.state_path.clone();
         fs::write(state_path.clone(), contents).expect(format!("Unable to write file {}", state_path).as_str());
         Ok(())
     }
 }
-
-pub fn read_file(filepath: &str) -> String {
-    let contents = fs::read_to_string(filepath).expect(format!("Unable to read file: {}", filepath).as_str());
-    contents
-}
-

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use prettytable::format;
 use prettytable::Table;
-use crate::utils::details::state::State;
+use crate::utils::details::state::{State, StateProperties};
 
 
 pub struct AppProperties {
@@ -102,21 +102,31 @@ impl App {
         self.set_interface();
         self.fetch_mac_addresses();
 
-        // Fetch the mac lookup
 
-        self.print_macs();
-        match &self.state {
-            Some(state) => state.save(),
+        // Fetch the mac lookup
+        let mut vendors: HashMap<MacAddr, String> = HashMap::new();
+        if self.properties.lookup_macs {
+            let macs = self.mac_addresses.keys().map(|&x| x.clone()).collect();
+            let stored_vendors = self.state.clone().map_or_else(||HashMap::new(), |x| x.properties.stored_vendors);
+            vendors = utils::details::mac_lookup::lookup_mac(macs, &stored_vendors).unwrap();
+            vendors.extend(stored_vendors);
+        }
+
+        self.print_macs(vendors.clone());
+        let _result = match &self.state {
+            Some(state) => {
+                let state_properties = StateProperties {
+                    stored_vendors: vendors.clone(),
+                    monitor_macs: self.properties.monitor_macs.clone()
+                };
+                state.save(state_properties)
+            },
             None => Ok(())
         };
     }
 
-    pub fn print_macs(&self) {
-        let mut vendors: HashMap<MacAddr, String> = HashMap::new();
-        if self.properties.lookup_macs {
-            let macs = self.mac_addresses.keys().map(|&x| x.clone()).collect();
-            vendors = utils::details::mac_lookup::lookup_mac(macs).unwrap_or(HashMap::new());
-        }
+    pub fn print_macs(&self, vendors: HashMap<MacAddr, String>) {
+
 
         if self.properties.monitor_macs.len() > 0 {
             for monitor_mac in self.properties.monitor_macs.to_owned() {
