@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use prettytable::format;
 use prettytable::Table;
+use crate::utils::details::state::State;
 
 
 pub struct AppProperties {
@@ -27,6 +28,7 @@ pub struct App {
     pub interface: Option<NetworkInterface>,
     pub properties: AppProperties,
     pub mac_addresses: HashMap<MacAddr, Ipv4Addr>,
+    pub state: Option<State>,
 }
 
 const BANNER: &str = "Arp Notify";
@@ -43,6 +45,13 @@ impl App {
         let matches = get_matches();
         let interfaces = utils::network::interfaces::Interfaces::new();
 
+        let state_file = matches.value_of("state_file").map(|x| x.clone().to_owned());
+        let mut state = None;
+        if state_file.is_some() {
+            state = Some(State::load(state_file.clone().unwrap()));
+        }
+
+
         let list_interfaces = matches.is_present("list_interfaces");
         let lookup_macs = matches.is_present("lookup_macs");
 
@@ -52,7 +61,8 @@ impl App {
         //After how many polls should a device be considered available
         let default_debounce: usize = usize::from_str(matches.value_of("debounce").unwrap_or(DEFAULT_DEBOUNCE)).unwrap_or(usize::from_str(DEFAULT_DEBOUNCE).unwrap());
         let notify_on_new: bool = matches.value_of("notify_on_new").map(|x| x == "1").unwrap_or(false);
-        let state_file = matches.value_of("state_file").map(|x| x.clone().to_owned());
+
+
 
         let mut monitor_macs: Vec<MacAddr> = vec![];
         if matches.is_present("monitor_macs") {
@@ -79,6 +89,7 @@ impl App {
             interface: None,
             properties,
             mac_addresses: HashMap::new(),
+            state
         }
     }
 
@@ -94,6 +105,10 @@ impl App {
         // Fetch the mac lookup
 
         self.print_macs();
+        match &self.state {
+            Some(state) => state.save(),
+            None => Ok(())
+        };
     }
 
     pub fn print_macs(&self) {
@@ -128,10 +143,10 @@ impl App {
             ips.sort_by(|a, b| a.1.cmp(b.1));
 
             println!("{} devices found\n", &ips.len());
-            for (ip, mac) in ips {
+            for (mac, ip) in ips {
                 let row = {
                     if self.properties.lookup_macs {
-                        row![ip, mac, vendors.get(ip).unwrap_or(&"Unknown".to_string())]
+                        row![ip, mac, vendors.get(mac).unwrap_or(&"Unknown".to_string())]
                     } else {
                         row![ip, mac]
                     }
